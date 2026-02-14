@@ -1,12 +1,19 @@
 """CLI entry point for the backtesting engine."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from src.config import EngineConfig, OptimizerConfig
 from src.data_loader import load_csv, load_all_csvs, validate_ohlcv
 from src.engine import BacktestEngine
+from src.fyers_auth import (
+    get_session, generate_token, save_token, load_token, get_fyers_client,
+)
+from src.fyers_data import fetch_historical, save_to_csv
 from src.metrics import calculate_metrics
 from src.optimizer import run_optimization, print_leaderboard
 from src.pine_translator import save_pine_script
@@ -112,11 +119,76 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         print(f"\nBest variant Pine Script saved to: {out_path}")
 
 
+def cmd_fetch(args: argparse.Namespace) -> None:
+    """Fetch historical OHLC data from Fyers API."""
+    load_dotenv()
+
+    client_id = os.environ.get("FYERS_APP_ID")
+    secret_key = os.environ.get("FYERS_SECRET_KEY")
+    redirect_uri = os.environ.get("FYERS_REDIRECT_URI")
+
+    if not client_id or not secret_key or not redirect_uri:
+        print("Missing Fyers credentials. Set FYERS_APP_ID, FYERS_SECRET_KEY, "
+              "and FYERS_REDIRECT_URI in .env file.")
+        print("See .env.example for the template.")
+        sys.exit(1)
+
+    # Try to load existing token, otherwise run auth flow
+    access_token = load_token()
+    if access_token is None:
+        session = get_session(client_id, secret_key, redirect_uri)
+        auth_code = input("Enter the auth_code from the redirect URL: ").strip()
+        access_token = generate_token(session, auth_code)
+        save_token(access_token)
+        print("Access token saved for today's session.")
+
+    fyers_client = get_fyers_client(client_id, access_token)
+
+    print(f"\nFetching {args.symbol} ({args.resolution}) "
+          f"from {args.date_from} to {args.date_to}...")
+
+    df = fetch_historical(
+        fyers_client,
+        symbol=args.symbol,
+        resolution=args.resolution,
+        start_date=args.date_from,
+        end_date=args.date_to,
+    )
+
+    filepath = save_to_csv(df, args.symbol, args.output_dir)
+
+    # Validate the generated CSV is compatible with the backtest engine
+    issues = validate_ohlcv(df)
+    if issues:
+        print("\nData validation warnings:")
+        for issue in issues:
+            print(f"  - {issue}")
+
+    print(f"\nFetched {len(df)} bars")
+    print(f"Date range: {df.index[0]} to {df.index[-1]}")
+    print(f"Saved to: {filepath}")
+    print(f"\nRun backtest with:")
+    print(f"  python main.py backtest --strategy macd_crossover --data {filepath}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Backtesting engine matching TradingView's Strategy Tester"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Fetch command
+    fetch = subparsers.add_parser("fetch", help="Fetch OHLC data from Fyers API")
+    fetch.add_argument("--symbol", "-s", required=True,
+                       help="Fyers symbol (e.g. NSE:SBIN-EQ, NSE:NIFTY50-INDEX)")
+    fetch.add_argument("--resolution", "-r", default="D",
+                       help="Candle resolution: D, 1, 5, 15, 30, 60, 120, 240")
+    fetch.add_argument("--from", dest="date_from", required=True,
+                       help="Start date (yyyy-mm-dd)")
+    fetch.add_argument("--to", dest="date_to", required=True,
+                       help="End date (yyyy-mm-dd)")
+    fetch.add_argument("--output-dir", default="data",
+                       help="Output directory (default: data/)")
 
     # Backtest command
     bt = subparsers.add_parser("backtest", help="Run a single backtest")
@@ -137,7 +209,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "backtest":
+    if args.command == "fetch":
+        cmd_fetch(args)
+    elif args.command == "backtest":
         cmd_backtest(args)
     elif args.command == "optimize":
         cmd_optimize(args)
