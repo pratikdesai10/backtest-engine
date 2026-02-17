@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -16,6 +16,9 @@ class SignalColumns:
     SHORT_EXIT = "short_exit"
 
 
+StrategyType = Literal["swing", "intraday"]
+
+
 class Strategy(ABC):
     """Abstract base class for trading strategies."""
 
@@ -23,6 +26,11 @@ class Strategy(ABC):
     @abstractmethod
     def name(self) -> str:
         """Human-readable strategy name."""
+
+    @property
+    @abstractmethod
+    def strategy_type(self) -> StrategyType:
+        """Strategy type: 'swing' or 'intraday'."""
 
     @property
     @abstractmethod

@@ -6,7 +6,7 @@ import pandas as pd
 
 from src.indicators import rsi_tv
 from src.pine_translator import generate_pine_header
-from src.strategy import SignalColumns, Strategy
+from src.strategy import SignalColumns, Strategy, StrategyType
 
 
 class RSIReversal(Strategy):
@@ -20,6 +20,10 @@ class RSIReversal(Strategy):
     @property
     def name(self) -> str:
         return "RSI Reversal"
+
+    @property
+    def strategy_type(self) -> StrategyType:
+        return "swing"
 
     @property
     def params(self) -> dict[str, Any]:

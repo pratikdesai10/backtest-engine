@@ -22,6 +22,11 @@ pip install -e ".[dev]"
 python main.py backtest --strategy macd_crossover --data data/NSE_SBIN-EQ.csv --pine
 python main.py optimize --strategy rsi_reversal --data-dir data/ --max-variants 500
 python main.py fetch -s NSE:SBIN-EQ -r D --from 2023-01-01 --to 2025-02-14
+
+# Bulk Data Fetching
+python fetch_market_data.py --list nifty50 --from 2023-01-01 --to 2025-02-14 --resolution D
+python fetch_market_data.py --list nifty500 --from 2024-01-01 --to 2025-02-14 --resolution D
+python fetch_market_data.py --list indices --from 2023-01-01 --to 2025-02-14 --resolution 15
 ```
 
 ## Architecture
@@ -42,7 +47,17 @@ CSV/Fyers API → `data_loader` → DataFrame → `strategy.compute_signals(df)`
 
 ### Strategy Contract
 
-Strategies live in `strategies/` and must implement the `Strategy` ABC. Signal columns are booleans: `long_entry`, `long_exit`, `short_entry`, `short_exit`. The engine handles position management — no pyramiding by default.
+Strategies live in `strategies/{swing|intraday}/` and must implement the `Strategy` ABC with these required properties/methods:
+- `name` — Human-readable strategy name
+- `strategy_type` — Either `"swing"` or `"intraday"` (determines file organization)
+- `params` — Current parameter values as dict
+- `param_space()` — Parameter grid for optimization
+- `from_params(**kwargs)` — Factory method to construct from parameters
+- `add_indicators(df)` — Add indicator columns to DataFrame
+- `compute_signals(df)` — Add signal columns: `long_entry`, `long_exit`, `short_entry`, `short_exit` (booleans)
+- `to_pine_script()` — Generate Pine Script v5 code
+
+The engine handles position management — no pyramiding by default.
 
 ### Key Design Decisions
 
@@ -55,7 +70,33 @@ Strategies live in `strategies/` and must implement the `Strategy` ABC. Signal c
 
 Root-level `.py` files (`swing_backtest.py`, `best_strategy.py`, `ema_breakout_trailing.py`, etc.) are experimental strategy research scripts, not part of the core engine.
 
+### Bulk Data Fetching
+
+`fetch_market_data.py` — Bulk data fetcher for downloading historical OHLC data from Fyers API:
+- Supports Nifty 50 (50 stocks), Nifty 500 (~300 major stocks), and indices (Nifty, Bank Nifty)
+- Automatic batching with configurable delays to avoid rate limits
+- Retry logic for failed requests (3 attempts with exponential backoff)
+- Progress tracking and failed symbol logging
+- Organized storage: `data/{resolution}/{list_type}/` (e.g., `data/daily/nifty50/`, `data/15min/indices/`)
+- Automatic validation of downloaded OHLCV data
+
 ## File Organization Rules
 
-- **All strategy files** must go in `strategies/` directory and implement the `Strategy` ABC from `src/strategy.py`
-- **All Pine Script output** must be saved to `output/pine/` directory (create directory if it doesn't exist)
+### Strategy Files
+- **All strategy files** must implement the `Strategy` ABC from `src/strategy.py` including the `strategy_type` property
+- **Swing trading strategies** go in `strategies/swing/` with `strategy_type = "swing"`
+- **Intraday trading strategies** go in `strategies/intraday/` with `strategy_type = "intraday"`
+- Use the appropriate subdirectory based on the strategy's timeframe and holding period
+
+### Pine Script Output
+- **Only save the best version** after running optimization — the `optimize` command automatically saves the best variant
+- **Never save Pine Scripts from single backtest runs** unless explicitly finding the optimal parameters
+- **Swing strategy Pine Scripts** go in `output/pine/swing/{strategy_name}_best.pine`
+- **Intraday strategy Pine Scripts** go in `output/pine/intraday/{strategy_name}_best.pine`
+- The `optimize` command handles this automatically based on `strategy_type`
+
+### Workflow
+1. Develop strategy in appropriate `strategies/{swing|intraday}/` directory
+2. Run `optimize` command to find best parameters across all datasets
+3. Best variant is automatically saved to `output/pine/{swing|intraday}/{strategy}_best.pine`
+4. Import the `_best.pine` file to TradingView for live testing

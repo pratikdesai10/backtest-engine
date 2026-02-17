@@ -17,9 +17,9 @@ from src.fyers_data import fetch_historical, save_to_csv
 from src.metrics import calculate_metrics
 from src.optimizer import run_optimization, print_leaderboard
 from src.pine_translator import save_pine_script
-from strategies.macd_crossover import MACDCrossover
-from strategies.rsi_reversal import RSIReversal
-from strategies.bb_squeeze import BBSqueeze
+from strategies.swing.macd_crossover import MACDCrossover
+from strategies.swing.rsi_reversal import RSIReversal
+from strategies.swing.bb_squeeze import BBSqueeze
 
 STRATEGIES = {
     "macd_crossover": MACDCrossover,
@@ -60,12 +60,15 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     print(f"Params: {strategy.params}")
     print(metrics.format_report())
 
+    # Note: For single backtest, use optimize command to find and save the best version
     if args.pine:
         pine_code = strategy.to_pine_script()
+        strategy_dir = strategy.strategy_type
         out_path = save_pine_script(
-            pine_code, Path("output/pine") / f"{args.strategy}.pine"
+            pine_code, Path(f"output/pine/{strategy_dir}") / f"{args.strategy}.pine"
         )
         print(f"\nPine Script saved to: {out_path}")
+        print("Note: This is a single parameter set. Use 'optimize' command to find the best version.")
 
 
 def cmd_optimize(args: argparse.Namespace) -> None:
@@ -109,12 +112,14 @@ def cmd_optimize(args: argparse.Namespace) -> None:
     leaderboard = print_leaderboard(results)
     print(leaderboard)
 
-    if args.pine and results:
+    # Always save the best version after optimization
+    if results:
         best = results[0]
         strategy = strategy_cls.from_params(**best.params)
         pine_code = strategy.to_pine_script()
+        strategy_dir = strategy.strategy_type
         out_path = save_pine_script(
-            pine_code, Path("output/pine") / f"{args.strategy}_optimized.pine"
+            pine_code, Path(f"output/pine/{strategy_dir}") / f"{args.strategy}_best.pine"
         )
         print(f"\nBest variant Pine Script saved to: {out_path}")
 

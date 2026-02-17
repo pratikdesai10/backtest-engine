@@ -6,7 +6,7 @@ import pandas as pd
 
 from src.indicators import bollinger_bands_tv
 from src.pine_translator import generate_pine_header
-from src.strategy import SignalColumns, Strategy
+from src.strategy import SignalColumns, Strategy, StrategyType
 
 
 class BBSqueeze(Strategy):
@@ -19,6 +19,10 @@ class BBSqueeze(Strategy):
     @property
     def name(self) -> str:
         return "BB Squeeze"
+
+    @property
+    def strategy_type(self) -> StrategyType:
+        return "swing"
 
     @property
     def params(self) -> dict[str, Any]:

@@ -6,7 +6,7 @@ import pandas as pd
 
 from src.indicators import macd_tv
 from src.pine_translator import generate_pine_header
-from src.strategy import SignalColumns, Strategy
+from src.strategy import SignalColumns, Strategy, StrategyType
 
 
 class MACDCrossover(Strategy):
@@ -20,6 +20,10 @@ class MACDCrossover(Strategy):
     @property
     def name(self) -> str:
         return "MACD Crossover"
+
+    @property
+    def strategy_type(self) -> StrategyType:
+        return "swing"
 
     @property
     def params(self) -> dict[str, Any]:
