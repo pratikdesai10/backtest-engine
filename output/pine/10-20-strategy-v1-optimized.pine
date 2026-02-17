@@ -1,0 +1,103 @@
+//@version=5
+strategy("10-20 EMA V1 Optimized (Long Only)", overlay=true, process_orders_on_close=true, initial_capital=100000, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// ==========================================
+// 1. INPUT PARAMETERS
+// ==========================================
+grp_ema = "EMA Settings"
+emaFastLen = input.int(10, "Fast EMA Length", group=grp_ema)
+emaSlowLen = input.int(20, "Slow EMA Length", group=grp_ema)
+
+grp_entry = "Entry Filters"
+bodyRatioMin = input.float(0.6, "Min Body Ratio (0-1)", step=0.05, minval=0.1, maxval=1.0, group=grp_entry, tooltip="Candle body must be > this fraction of total range. 0.6 = strong Marubozu")
+rsiLen = input.int(14, "RSI Length", group=grp_entry)
+rsiUpper = input.float(70, "RSI Upper Limit", step=5, group=grp_entry, tooltip="Don't enter if RSI is above this (overbought filter)")
+
+grp_risk = "Risk Management"
+rrRatio = input.float(3.0, "Reward to Risk Ratio", step=0.5, group=grp_risk, tooltip="Target = Entry + RR * (Entry - SL). Optimized value: 3.0")
+
+// ==========================================
+// 2. INDICATOR CALCULATIONS
+// ==========================================
+emaFast = ta.ema(close, emaFastLen)
+emaSlow = ta.ema(close, emaSlowLen)
+rsiVal  = ta.rsi(close, rsiLen)
+
+// ==========================================
+// 3. CANDLE & CROSSOVER DETECTION
+// ==========================================
+crossUp = ta.crossover(emaFast, emaSlow)
+
+candleRange = high - low
+bodyAbs     = math.abs(close - open)
+bodyRatio   = candleRange > 0 ? bodyAbs / candleRange : 0.0
+isBullishStrong = close > open and bodyRatio > bodyRatioMin
+
+// ==========================================
+// 4. ENTRY CONDITIONS
+// ==========================================
+longCondition = crossUp and isBullishStrong and rsiVal < rsiUpper
+
+// ==========================================
+// 5. STRATEGY EXECUTION & RISK MANAGEMENT
+// ==========================================
+var float entryPrice = na
+var float slPrice    = na
+var float tpPrice    = na
+
+// Entry Logic
+if longCondition and strategy.position_size == 0
+    entryPrice := close
+    slPrice    := low
+    float risk  = close - low
+    tpPrice    := close + risk * rrRatio
+    strategy.entry("Long", strategy.long, comment="EMA Cross + Marubozu")
+
+// Exit Logic — only place exit orders when actually in a position
+// NOTE: Do NOT reset slPrice/tpPrice in an else block here.
+// With process_orders_on_close=true, position_size is still 0 on the
+// entry bar, so an else block would wipe out the SL/TP we just set.
+if strategy.position_size > 0
+    strategy.exit("Exit", "Long", stop=slPrice, limit=tpPrice, comment_loss="SL Hit", comment_profit="TP Hit")
+
+// Reset levels only after a position has fully closed (was in a trade, now flat)
+var bool wasInTrade = false
+if strategy.position_size > 0
+    wasInTrade := true
+else if wasInTrade
+    // Position just closed — reset for clean plotting
+    entryPrice := na
+    slPrice    := na
+    tpPrice    := na
+    wasInTrade := false
+
+// ==========================================
+// 6. VISUALIZATION
+// ==========================================
+p1 = plot(emaFast, color=color.new(color.blue, 0), title="10 EMA", linewidth=2)
+p2 = plot(emaSlow, color=color.new(color.orange, 0), title="20 EMA", linewidth=2)
+fill(p1, p2, color=emaFast > emaSlow ? color.new(color.green, 90) : color.new(color.red, 90), title="Trend Background")
+
+// BUY marker on entry signal
+plotshape(longCondition and strategy.position_size == 0, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="BUY")
+
+// SL / TP / Entry lines while in a position
+plot(strategy.position_size > 0 ? slPrice    : na, title="Stop Loss",   color=color.red,   style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 ? tpPrice    : na, title="Take Profit", color=color.green,  style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 ? entryPrice : na, title="Entry Price",  color=color.gray,  style=plot.style_linebr, linewidth=1)
+
+// ==========================================
+// 7. INFO TABLE
+// ==========================================
+var table infoTable = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 80), border_width=1)
+if barstate.islast
+    table.cell(infoTable, 0, 0, "Metric",    text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 0, "Value",     text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 0, 1, "R:R Ratio", text_color=color.gray,  text_size=size.small)
+    table.cell(infoTable, 1, 1, "1:" + str.tostring(rrRatio, "#.#"), text_color=color.green, text_size=size.small)
+    table.cell(infoTable, 0, 2, "Body Min",  text_color=color.gray,  text_size=size.small)
+    table.cell(infoTable, 1, 2, str.tostring(bodyRatioMin * 100, "#") + "%", text_color=color.green, text_size=size.small)
+    table.cell(infoTable, 0, 3, "RSI Limit", text_color=color.gray,  text_size=size.small)
+    table.cell(infoTable, 1, 3, "< " + str.tostring(rsiUpper, "#"), text_color=color.green, text_size=size.small)
+    table.cell(infoTable, 0, 4, "RSI Now",   text_color=color.gray,  text_size=size.small)
+    table.cell(infoTable, 1, 4, str.tostring(rsiVal, "#.#"), text_color=rsiVal > rsiUpper ? color.red : color.green, text_size=size.small)

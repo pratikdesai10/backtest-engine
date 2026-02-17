@@ -63,7 +63,7 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     if args.pine:
         pine_code = strategy.to_pine_script()
         out_path = save_pine_script(
-            pine_code, Path("output") / f"{args.strategy}.pine"
+            pine_code, Path("output/pine") / f"{args.strategy}.pine"
         )
         print(f"\nPine Script saved to: {out_path}")
 
@@ -114,7 +114,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         strategy = strategy_cls.from_params(**best.params)
         pine_code = strategy.to_pine_script()
         out_path = save_pine_script(
-            pine_code, Path("output") / f"{args.strategy}_optimized.pine"
+            pine_code, Path("output/pine") / f"{args.strategy}_optimized.pine"
         )
         print(f"\nBest variant Pine Script saved to: {out_path}")
 
