@@ -1,0 +1,57 @@
+//@version=5
+strategy("Nifty Momentum", overlay=true, initial_capital=100000, commission_type=strategy.commission.percent, commission_value=0.1, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// Entry Inputs
+entryFast = input.int(21, 'Entry EMA Fast')
+entrySlow = input.int(50, 'Entry EMA Slow')
+candleMult = input.float(2.5, 'Candle Body Multiplier')
+candleAvgLen = input.int(15, 'Candle Avg Length')
+
+// Exit Inputs
+exitFast = input.int(8, 'Exit EMA Fast')
+exitSlow = input.int(13, 'Exit EMA Slow')
+
+// Entry Indicators
+entryFastEMA = ta.ema(close, entryFast)
+entrySlowEMA = ta.ema(close, entrySlow)
+
+// Momentum Candle Detection
+bodySize = math.abs(close - open)
+avgBody = ta.sma(bodySize, candleAvgLen)
+bigBullCandle = close > open and bodySize > candleMult * avgBody
+bigBearCandle = close < open and bodySize > candleMult * avgBody
+
+// Entry Signals: EMA crossover + momentum candle
+entryCrossUp = ta.crossover(entryFastEMA, entrySlowEMA)
+entryCrossDown = ta.crossunder(entryFastEMA, entrySlowEMA)
+
+// Session filter — no entries in last 20 min
+isNearClose = (hour == 15 and minute >= 10) or hour > 15
+
+longEntry = entryCrossUp and bigBullCandle and not isNearClose
+shortEntry = entryCrossDown and bigBearCandle and not isNearClose
+
+// Exit Indicators (faster EMA pair)
+exitFastEMA = ta.ema(close, exitFast)
+exitSlowEMA = ta.ema(close, exitSlow)
+
+// Exit Signals: faster EMA crossover or session end
+isForceExit = hour == 15 and minute >= 20
+longExit = ta.crossunder(exitFastEMA, exitSlowEMA) or isForceExit
+shortExit = ta.crossover(exitFastEMA, exitSlowEMA) or isForceExit
+
+// Strategy Execution
+if longEntry
+    strategy.entry('Long', strategy.long)
+if longExit
+    strategy.close('Long')
+if shortEntry
+    strategy.entry('Short', strategy.short)
+if shortExit
+    strategy.close('Short')
+
+// Plots
+plot(entryFastEMA, 'Entry Fast EMA', color.blue, linewidth=2)
+plot(entrySlowEMA, 'Entry Slow EMA', color.orange, linewidth=2)
+plot(exitFastEMA, 'Exit Fast EMA', color.new(color.green, 60))
+plot(exitSlowEMA, 'Exit Slow EMA', color.new(color.red, 60))
